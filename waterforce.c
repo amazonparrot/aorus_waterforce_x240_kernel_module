@@ -14,6 +14,7 @@
 #include <linux/cpufreq.h>
 #include <linux/timer.h>
 #include <linux/thermal.h>
+#include <linux/kthread.h>
 #define USB_VENDOR_ID_GIGABYTE		0x1044
 #define USB_PRODUCT_ID_WATERFORCE_1	0x7a4d	/* Gigabyte AORUS WATERFORCE X (240, 280, 360) */
 #define USB_PRODUCT_ID_WATERFORCE_2	0x7a52	/* Gigabyte AORUS WATERFORCE X 360G */
@@ -29,7 +30,7 @@
 #define WATERFORCE_PUMP_DUTY	0x09
 #define CPU_TEMP_CMD_LEN 	9
 #define FAN_COLOR_CMD_LEN 	5
-#define TIMER_WAKEUP_MS 	10000
+#define TIMER_WAKEUP_S 		2
 DECLARE_COMPLETION(status_report_received);
 
 static const u8 get_status_cmd[] = { 0x99, 0xDA };
@@ -72,6 +73,7 @@ struct waterforce_data {
 	u8 fanColorB;
 	u8 *buffer;
         u8 cputhermalzoneid;
+	u8 hwmonid;
         bool updating;
 	unsigned long updated;	/* jiffies */
 };
@@ -94,6 +96,31 @@ static int read_file(char * path,char *buf,int buflen) {
     filp_close(temp_file, NULL);
     return 0;
 }
+static int get_hwmon_id_of_waterforce(struct waterforce_data *priv)
+{
+
+
+    char temp_string[20];
+    char path_string[60];
+    for (u8 i=0;i<9;i++) {
+	    sprintf(path_string,"/sys/class/hwmon/hwmon%d/name",i);
+		
+	    if (read_file(path_string,temp_string,sizeof(temp_string))==0) {
+		
+                    if (strcmp(temp_string,"waterforce\n")==0) {
+			
+   		        printk("HWMon name %s %d\n",temp_string,i);
+			priv->hwmonid=i;
+			break;
+		    }
+		
+    	    }
+	
+    }
+
+    return 0;
+}
+
 static int get_thermal_zone_id_of_cpu(struct waterforce_data *priv)
 {
 
@@ -351,9 +378,9 @@ static int waterforce_raw_event(struct hid_device *hdev, struct hid_report *repo
 		hid_err_once(priv->hdev, "firmware or device is possibly damaged\n");
 		return 0;
 	}
-        for (int i=0;i<16;i++) {
+   /*     for (int i=0;i<16;i++) {
 		printk("data[%d]=%d\n",i,data[i]);
-	}
+	} */
 
 	priv->temp_input[0] = data[WATERFORCE_TEMP_SENSOR]*1000;
 	priv->speed_input[0] = get_unaligned_le16(data + WATERFORCE_FAN_SPEED);
@@ -373,15 +400,17 @@ static int waterforce_raw_event(struct hid_device *hdev, struct hid_report *repo
 }
 static void waterforce_timer_callback(struct timer_list *timer)
 {
-    printk(KERN_INFO "Timer expired\n"); 
+//    printk(KERN_INFO "Timer expired\n"); 
     if (waterforce_device!=NULL) {
 	struct waterforce_data *priv = hid_get_drvdata(waterforce_device);
 	if (priv) {
+		char buf[100];
+		char path[100];
+		sprintf(path,"/sys/class/hwmon/hwmon%d/fan1_input",priv->hwmonid);
+		read_file(path,buf,sizeof(buf));
 	}
     }
 	
-    // Re-arm the timer to expire in TIMER_WAKEUP_MS
-    mod_timer(timer, jiffies + msecs_to_jiffies(TIMER_WAKEUP_MS));
 }
 
 static int waterforce_probe(struct hid_device *hdev, const struct hid_device_id *id)
@@ -441,8 +470,8 @@ static int waterforce_probe(struct hid_device *hdev, const struct hid_device_id 
 		goto fail_and_close;
 	}
         get_thermal_zone_id_of_cpu(priv);
+        get_hwmon_id_of_waterforce(priv);
 	get_cpu_freq(priv);
-
 	return 0;
 
 fail_and_close:
@@ -455,7 +484,6 @@ fail_and_stop:
 static void waterforce_remove(struct hid_device *hdev)
 {
 	struct waterforce_data *priv = hid_get_drvdata(hdev);
-	del_timer_sync(&waterforce_timer);
 
 	hwmon_device_unregister(priv->hwmon_dev);
 
@@ -480,16 +508,45 @@ static struct hid_driver waterforce_driver = {
 	.raw_event = waterforce_raw_event,
 };
 
+
+
+
+
+
+static struct task_struct *waterforce_timer_thread;
+
+static int waterforce_thread_fn(void *data)
+{
+//	timer_setup(&waterforce_timer,waterforce_timer_callback,0);
+//        mod_timer(&waterforce_timer, jiffies + msecs_to_jiffies(TIMER_WAKEUP_MS));
+
+    while (!kthread_should_stop()) {
+	set_current_state(TASK_INTERRUPTIBLE);
+//	printk("waterforce_thread_fn\n");
+	waterforce_timer_callback(NULL);
+	schedule_timeout(HZ*TIMER_WAKEUP_S);
+    }
+    return 0;
+}
 static int __init waterforce_init(void)
 {
-
+        waterforce_timer_thread = kthread_run(waterforce_thread_fn,NULL,"waterforce_timer_thread");
+	if (IS_ERR(waterforce_timer_thread)) {
+	        printk(KERN_ERR "Waterforce: Failed to create thread\n");
+//        	del_timer(&waterforce_timer);
+	        return PTR_ERR(waterforce_timer_thread);
+   	}
 	return hid_register_driver(&waterforce_driver);
 }
 
 static void __exit waterforce_exit(void)
 {
+//	del_timer_sync(&waterforce_timer);
+//	wake_up_process(waterforce_timer_thread);
+	kthread_stop(waterforce_timer_thread);
 	hid_unregister_driver(&waterforce_driver);
 }
+
 
 /*
  * When compiled into the kernel, initialize after the hid bus.
