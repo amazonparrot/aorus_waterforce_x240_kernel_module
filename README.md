@@ -1,15 +1,24 @@
-# waterforce_x240_poc
-Waterforce x240 kernel Module proof of concept code
+# Waterforce X 240, 280, 360 Kernel module (POC)
+Waterforce X 240 kernel Module proof of concept code
 Modified code from https://github.com/aleksamagicka/waterforce-hwmon to add active CPU temp. feeding to the waterforce
 RGB color based on the fan speed pump speed and cpu temperature
+
+# dependency
+apt-get install lm-sensors
 
 # to build
 make
 
-# to install 
-make dev
+# to test
+sudo make dev
 
-# Known issue
-1. you need to insmod waterforce.ko every time you reboot
+# to persistent install
+sudo make modules_install
 
-# WARNING: use at your own risk
+sudo depmod
+
+# checking if the module is running
+tail -f /var/log/syslog
+it should show the CPU temperature every 2 secs
+
+
