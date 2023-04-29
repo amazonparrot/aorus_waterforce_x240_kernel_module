@@ -109,7 +109,7 @@ static int get_hwmon_id_of_waterforce(struct waterforce_data *priv)
 		
                     if (strcmp(temp_string,"waterforce\n")==0) {
 			
-   		        printk("HWMon name %s %d\n",temp_string,i);
+   		    //    printk("HWMon name %s %d\n",temp_string,i);
 			priv->hwmonid=i;
 			break;
 		    }
@@ -134,7 +134,7 @@ static int get_thermal_zone_id_of_cpu(struct waterforce_data *priv)
 		
                     if (strcmp(temp_string,"x86_pkg_temp\n")==0) {
 			priv->cputhermalzoneid=i;
-   		        printk("Thermal Zone type %s %d\n",temp_string,i);
+   		      //  printk("Thermal Zone type %s %d\n",temp_string,i);
 			break;
 		    }
 		
@@ -404,6 +404,9 @@ static void waterforce_timer_callback(struct timer_list *timer)
     if (waterforce_device!=NULL) {
 	struct waterforce_data *priv = hid_get_drvdata(waterforce_device);
 	if (priv) {
+        	get_thermal_zone_id_of_cpu(priv);
+	        get_hwmon_id_of_waterforce(priv);
+
 		char buf[100];
 		char path[100];
 		sprintf(path,"/sys/class/hwmon/hwmon%d/fan1_input",priv->hwmonid);
@@ -469,8 +472,6 @@ static int waterforce_probe(struct hid_device *hdev, const struct hid_device_id 
 		hid_err(hdev, "hwmon registration failed with %d\n", ret);
 		goto fail_and_close;
 	}
-        get_thermal_zone_id_of_cpu(priv);
-        get_hwmon_id_of_waterforce(priv);
 	get_cpu_freq(priv);
 	return 0;
 
@@ -523,6 +524,7 @@ static int waterforce_thread_fn(void *data)
     while (!kthread_should_stop()) {
 	set_current_state(TASK_INTERRUPTIBLE);
 //	printk("waterforce_thread_fn\n");
+
 	waterforce_timer_callback(NULL);
 	schedule_timeout(HZ*TIMER_WAKEUP_S);
     }
