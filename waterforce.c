@@ -22,7 +22,7 @@
 #define STATUS_VALIDITY		2	/* seconds */
 #define MAX_REPORT_LENGTH	6144
 
-#define WATERFORCE_TEMP_SENSOR	0xA
+#define WATERFORCE_TEMP_SENSOR	0xD
 #define WATERFORCE_FAN_SPEED	0x02
 #define WATERFORCE_PUMP_SPEED	0x05
 #define WATERFORCE_FAN_DUTY	0x08
@@ -155,7 +155,10 @@ static int get_cpu_freq(struct waterforce_data *priv)
         priv->nthread=nr_cpu_ids;
         unsigned maxfreq=0;
         while (cpu < nr_cpu_ids) {
+//		struct cpufreq_policy policy;
+//		cpufreq_get_policy(&policy,cpu);
 		unsigned freq=cpufreq_quick_get_max(cpu);
+//		unsigned freq=policy.cur;
 		if (freq>maxfreq) { maxfreq=freq; }
  //              pr_info("CPU: %u, freq: %u kHz\n", cpu, freq);
                 cpu = cpumask_next(cpu, cpu_online_mask);
@@ -348,10 +351,11 @@ static int waterforce_raw_event(struct hid_device *hdev, struct hid_report *repo
 		hid_err_once(priv->hdev, "firmware or device is possibly damaged\n");
 		return 0;
 	}
-	u16 tmp_temp= DIV_ROUND_CLOSEST(get_unaligned_be16(data+WATERFORCE_TEMP_SENSOR) * 9,5 ) + 32;
+        for (int i=0;i<16;i++) {
+		printk("data[%d]=%d\n",i,data[i]);
+	}
 
-
-	priv->temp_input[0] = tmp_temp;
+	priv->temp_input[0] = data[WATERFORCE_TEMP_SENSOR]*1000;
 	priv->speed_input[0] = get_unaligned_le16(data + WATERFORCE_FAN_SPEED);
 	priv->speed_input[1] = get_unaligned_le16(data + WATERFORCE_PUMP_SPEED);
 	priv->speed_input[2] = data[WATERFORCE_FAN_DUTY];
