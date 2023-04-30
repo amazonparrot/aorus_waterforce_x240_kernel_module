@@ -85,6 +85,21 @@ def get_cpu_temp():
             return int(t[x][0].current)
     print("Warning: Unable to get CPU temperature!")
     return 0 
+def makecustomcurvestr(fanorpump,speed):
+  data="99e6"
+  if fanorpump=="fan": data+="0101"
+  if fanorpump=="pump": data+="0402"
+  speedtemp="{:04x}".format(speed)
+  data+="00"+speedtemp
+  data+="1e"+speedtemp
+  data+="32"+speedtemp
+  data+="41"+speedtemp
+  print(data)
+
+  data+="0"*(6144*2-len(data))
+  barray=bytes.fromhex(data)
+  return barray
+  
 def makefanorpumpmodestr(fanorpump,mode):
   
   data="99e5"
@@ -101,7 +116,6 @@ def makefansetcolorstr(color):
   data+="0"*(6144*2-len(data))
   barray=bytes.fromhex(data)
   return barray
-  
 def makestatusrequeststr():
   data="99da"
   data+="0"*(6144*2-len(data))
@@ -123,7 +137,7 @@ def makecpuupdatestr():
 #  print(ghz1)
 #  print(ghz2)
   data="99e000"+cputemp+nthreadstr+ghz1+ghz2+ncorestr+"30"
-#  print(data)
+  print(data)
   data+="0"*(6144*2-len(data))
   barray=bytes.fromhex(data)
   print("cputemp",cput)
@@ -162,25 +176,33 @@ dev = usb.core.find(idVendor=0x1044, idProduct=0x7a4d)
 interface=0
 if dev.is_kernel_driver_active(interface) is True:
 #  # tell the kernel to detach
+  print("Detech kernel driver")
   dev.detach_kernel_driver(interface)
 #  usb.util.claim_interface(dev, interface)
 #bdata=makefanorpumpmodestr("fan","balance")
 #dev.write(endpoint2,bdata)
 #bdata=makefanorpumpmodestr("pump","balance")
 #dev.write(endpoint2,bdata)
+#dev.attach_kernel_driver(interface)
+#exit()
 dev=setupusb1()
 bdata=makefanorpumpmodestr("fan","balance")
 dev.interruptWrite(0x2,bdata)
 bdata=makefanorpumpmodestr("pump","balance")
 dev.interruptWrite(0x2,bdata)
+bdata=makecustomcurvestr("fan",2000)
+dev.interruptWrite(0x2,bdata)
+bdata=makecustomcurvestr("pump",2000)
+dev.interruptWrite(0x2,bdata)
 while(True):
  try:
+
      bdata=makecpuupdatestr()
      dev.interruptWrite(0x2,bdata)
      bdata=makestatusrequeststr()
      dev.interruptWrite(0x2,bdata)
      ret=dev.interruptRead(0x81,256)
-
+   
      fanspeed,pumpspeed,pumptemp=printstatus(ret)
      r="{:02x}".format(fanspeed%256)
      g="{:02x}".format(pumpspeed%256)
